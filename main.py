@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(
@@ -32,26 +34,45 @@ tasks = [
         "title": "Test API endpoints",
         "description": "Test the CRUD operations",
         "completed": False
+    },
+    {
+        "id": 3,
+        "title": "Complete documentation",
+        "description": "Prepare the Week 2 submission",
+        "completed": False
     }
 ]
 
 
-@app.get("/")
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError
+):
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "Invalid request body"
+        }
+    )
+
+
+@app.get("/", summary="Welcome message")
 def hello():
     return {"message": "Hello from my CRUD API!"}
 
 
-@app.get("/health")
+@app.get("/health", summary="Health check")
 def health_check():
     return {"status": "ok"}
 
 
-@app.get("/tasks")
+@app.get("/tasks", summary="Get all tasks")
 def get_tasks():
     return tasks
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", summary="Get a task by ID")
 def get_task(task_id: int):
     for task in tasks:
         if task["id"] == task_id:
@@ -63,7 +84,11 @@ def get_task(task_id: int):
     )
 
 
-@app.post("/tasks", status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/tasks",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a task"
+)
 def create_task(task: TaskCreate):
     new_id = max([t["id"] for t in tasks], default=0) + 1
 
@@ -79,10 +104,14 @@ def create_task(task: TaskCreate):
     return new_task
 
 
-@app.put("/tasks/{task_id}")
+@app.put(
+    "/tasks/{task_id}",
+    summary="Update a task"
+)
 def update_task(task_id: int, task_update: TaskUpdate):
     for task in tasks:
         if task["id"] == task_id:
+
             if task_update.title is not None:
                 task["title"] = task_update.title
 
@@ -100,7 +129,11 @@ def update_task(task_id: int, task_update: TaskUpdate):
     )
 
 
-@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a task"
+)
 def delete_task(task_id: int):
     for index, task in enumerate(tasks):
         if task["id"] == task_id:

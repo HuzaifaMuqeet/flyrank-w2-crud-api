@@ -1,7 +1,11 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(
+    title="FlyRank CRUD API",
+    description="A simple To-Do REST API built with FastAPI for the FlyRank Backend AI Engineer Week 2 assignment.",
+    version="1.0.0"
+)
 
 
 class TaskCreate(BaseModel):

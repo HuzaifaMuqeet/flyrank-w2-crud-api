@@ -2,219 +2,167 @@
 
 A simple To-Do REST API built with Python and FastAPI for the FlyRank Backend AI Engineer program.
 
-The project was initially built using in-memory storage and was later upgraded to use a persistent SQLite database.
+The project started with in-memory CRUD operations, was upgraded to SQLite persistence, and was later migrated to PostgreSQL running in Docker.
 
 ## Features
 
-* Create tasks
-* Read all tasks
-* Read an individual task
-* Update tasks
-* Delete tasks
-* Request validation
-* HTTP status code handling
-* Interactive Swagger/OpenAPI documentation
-* SQLite database persistence
-* Automatic database and table creation
-* Data survives server restarts
+- Create, read, update, and delete tasks
+- Request validation and error handling
+- RESTful API endpoints
+- Swagger/OpenAPI documentation
+- Persistent database storage
+- PostgreSQL with Docker
+- Environment-based database configuration
 
 ## Tech Stack
 
-* Python 3.10+
-* FastAPI
-* Uvicorn
-* Pydantic
-* SQLite
-
-## Database
-
-This version of the API uses **SQLite** instead of storing tasks in an in-memory Python list.
-
-SQLite was chosen because it is lightweight, requires no separate database server, and stores the complete database in a single file. This makes it suitable for a small CRUD application and easy to set up for development and testing.
-
-The database file is:
-
-```text
-tasks.db
-```
-
-The application automatically creates the database if it does not exist.
-
-It also automatically creates the `tasks` table:
-
-| Column        | Type    | Description                                 |
-| ------------- | ------- | ------------------------------------------- |
-| `id`          | INTEGER | Unique task identifier                      |
-| `title`       | TEXT    | Task title                                  |
-| `description` | TEXT    | Task description                            |
-| `completed`   | INTEGER | Completion status (`0` = false, `1` = true) |
-
-The `tasks.db` file is included in `.gitignore`, so the local database is not committed to GitHub.
-
-When the project is cloned and started, the database and table are automatically created.
+- Python 3.10+
+- FastAPI
+- Uvicorn
+- Pydantic
+- PostgreSQL
+- Docker
+- Psycopg
+- python-dotenv
 
 ## API Endpoints
 
-| Method | Endpoint      | Description             |
-| ------ | ------------- | ----------------------- |
-| GET    | `/`           | Welcome message         |
-| GET    | `/health`     | Health check            |
-| GET    | `/tasks`      | Get all tasks           |
-| GET    | `/tasks/{id}` | Get a task by ID        |
-| POST   | `/tasks`      | Create a new task       |
-| PUT    | `/tasks/{id}` | Update an existing task |
-| DELETE | `/tasks/{id}` | Delete a task           |
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Welcome message |
+| GET | `/health` | Health check |
+| GET | `/tasks` | Get all tasks |
+| GET | `/tasks/{id}` | Get a task |
+| POST | `/tasks` | Create a task |
+| PUT | `/tasks/{id}` | Update a task |
+| DELETE | `/tasks/{id}` | Delete a task |
 
-## Installation
+## Database
 
-Clone the repository:
+The project originally used SQLite (`tasks.db`) for persistence.
 
-```bash
-git clone https://github.com/HuzaifaMuqeet/flyrank-w2-crud-api.git
-cd flyrank-w2-crud-api
-```
+For the database integration stage, SQLite was replaced with **PostgreSQL 16 running in Docker**.
 
-Create a virtual environment:
+The PostgreSQL database uses:
 
-```powershell
-python -m venv venv
-```
+- Database: `tasks`
+- User: `postgres`
+- Port: `5433`
+- Container: `taskdb`
+- Volume: `taskdata`
 
-Activate the virtual environment on Windows:
+The application reads the database connection string from `.env`:
 
-```powershell
-venv\Scripts\activate
-```
+```env
+DATABASE_URL=postgres://postgres:qwerty@localhost:5433/tasks
 
-Install the dependencies:
+The actual .env file is excluded from Git using .gitignore.
 
-```powershell
-pip install -r requirment.txt
-```
+A safe template is provided in .env.example.
 
-## Running the API
+PostgreSQL Setup
 
-Start the FastAPI development server:
+PostgreSQL is started using Docker:
 
-```powershell
-uvicorn main:app --reload
-```
+docker run --name taskdb `
+  -e POSTGRES_PASSWORD=qwerty `
+  -e POSTGRES_DB=tasks `
+  -p 5433:5432 `
+  -v taskdata:/var/lib/postgresql/data `
+  -d postgres:16
 
-The API will be available at:
+The application automatically creates the tasks table when it starts.
 
-```text
-http://127.0.0.1:8000
-```
+Database Verification
 
-Interactive Swagger/OpenAPI documentation is available at:
+The PostgreSQL database was verified using:
 
-```text
-http://127.0.0.1:8000/docs
-```
+docker exec -it taskdb psql -U postgres -d tasks -c "\dt"
 
-## Example API Response
+The tasks table was successfully created and verified with:
 
-### GET `/tasks`
+SELECT id, title, description, completed
+FROM tasks
+ORDER BY id;
+CRUD Testing
 
-```json
-[
-  {
-    "id": 1,
-    "title": "Learn FastAPI",
-    "description": "Build my first CRUD API",
-    "completed": false
-  },
-  {
-    "id": 2,
-    "title": "Test API endpoints",
-    "description": "Test the CRUD operations",
-    "completed": false
-  },
-  {
-    "id": 3,
-    "title": "Complete documentation",
-    "description": "Prepare the Week 2 submission",
-    "completed": false
-  }
-]
-```
+The API was tested using PowerShell requests.
 
-## SQLite Testing
+Verified operations include:
 
-SQLiteStudio was used to inspect and modify the SQLite database manually.
+Creating a new task
+Retrieving tasks
+Updating an existing task
+Deleting a task
+Handling non-existent task IDs with 404 Not Found
+Health check returning {"status": "ok"}
 
-The following SQL queries were executed as part of the database assignment.
+Example successful response:
 
-List all tasks:
+{
+  "id": 6,
+  "title": "CRUD Test Task Updated",
+  "description": "Testing PostgreSQL CRUD operations",
+  "completed": true
+}
 
-```sql
-SELECT * FROM tasks;
-```
+A deleted task correctly returns:
 
-Show completed tasks:
-
-```sql
-SELECT * FROM tasks WHERE completed = 1;
-```
-
-Count all tasks:
-
-```sql
-SELECT COUNT(*) FROM tasks;
-```
-
-Mark every task as completed:
-
-```sql
-UPDATE tasks SET completed = 1;
-```
-
-Delete all completed tasks:
-
-```sql
-DELETE FROM tasks WHERE completed = 1;
-```
-
-## Database Screenshot
-
-The SQLite database was inspected using SQLiteStudio.
-
-![SQLite Database](screenshots/sqlite-database.png)
-
-## Persistence
-
-The original version of the project stored tasks in an in-memory Python list. This meant that all tasks were lost whenever the server restarted.
-
-The updated implementation stores tasks in SQLite.
-
-Therefore, tasks created through the API remain available after stopping and restarting the FastAPI server.
-
-## Validation and Error Handling
-
-The API returns appropriate HTTP status codes for different situations.
-
-* `200 OK` — successful GET and PUT requests
-* `201 Created` — successful task creation
-* `204 No Content` — successful task deletion
-* `400 Bad Request` — invalid request body
-* `404 Not Found` — requested task does not exist
-
-Example for an unknown task:
-
-```json
 {
   "detail": "Task not found"
 }
-```
+Validation & Error Handling
+Status	Meaning
+200	Successful request
+201	Task created
+204	Task deleted
+400	Invalid request body
+404	Task not found
+Running the API
 
-## Assignment
+Create and activate the virtual environment:
 
-**FlyRank Backend AI Engineering**
+python -m venv venv
+venv\Scripts\activate
 
-**Assignment:** BE-02 — Connecting to the Database
+Install dependencies:
 
-**Phase:** Foundations
+pip install -r requirements.txt
 
-**Week:** 3
+Configure .env using .env.example.
 
-The purpose of this assignment was to replace the in-memory task storage from the previous CRUD API with a persistent SQLite database while keeping the API endpoints and behavior consistent.
+Start PostgreSQL:
+
+docker start taskdb
+
+Start FastAPI:
+
+uvicorn main:app --reload
+
+API:
+
+http://127.0.0.1:8000
+
+Swagger documentation:
+
+http://127.0.0.1:8000/docs
+Project History
+Previous Stage
+
+Implemented a FastAPI CRUD API with request validation, HTTP status codes, and SQLite persistence.
+
+Database Integration Stage
+
+Migrated the application from SQLite to PostgreSQL, containerized PostgreSQL using Docker, added environment-based configuration, and verified complete CRUD functionality against the PostgreSQL database.
+
+Assignment
+
+FlyRank Backend AI Engineering
+
+Phase: Foundations
+
+Previous Assignment: BE-02 — Connecting to the Database
+
+Current Work: PostgreSQL & Docker Database Integration
+
+The project demonstrates the progression from a basic CRUD API to a persistent PostgreSQL-backed REST API.

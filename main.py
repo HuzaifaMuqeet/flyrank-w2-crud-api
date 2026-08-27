@@ -1,8 +1,19 @@
+import os
+
+import psycopg
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import sqlite3
+
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not configured")
 
 
 app = FastAPI(
@@ -28,61 +39,53 @@ class TaskUpdate(BaseModel):
 # Database setup
 # -----------------------------
 
-DATABASE = "tasks.db"
-
-
 def get_db_connection():
-    connection = sqlite3.connect(DATABASE)
-    connection.row_factory = sqlite3.Row
-    return connection
+    return psycopg.connect(DATABASE_URL)
 
 
 def initialize_database():
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
 
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            completed INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-
-    existing_tasks = connection.execute(
-        "SELECT COUNT(*) FROM tasks"
-    ).fetchone()[0]
-
-    if existing_tasks == 0:
-        connection.executemany(
-            """
-            INSERT INTO tasks (id, title, description, completed)
-            VALUES (?, ?, ?, ?)
-            """,
-            [
-                (
-                    1,
-                    "Learn FastAPI",
-                    "Build my first CRUD API",
-                    0
-                ),
-                (
-                    2,
-                    "Test API endpoints",
-                    "Test the CRUD operations",
-                    0
-                ),
-                (
-                    3,
-                    "Complete documentation",
-                    "Prepare the Week 2 submission",
-                    0
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    description TEXT DEFAULT '',
+                    completed BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            ]
-        )
+            """)
 
-    connection.commit()
-    connection.close()
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            existing_tasks = cursor.fetchone()[0]
+
+            if existing_tasks == 0:
+                cursor.executemany(
+                    """
+                    INSERT INTO tasks
+                        (title, description, completed)
+                    VALUES
+                        (%s, %s, %s)
+                    """,
+                    [
+                        (
+                            "Learn FastAPI",
+                            "Build my first CRUD API",
+                            False
+                        ),
+                        (
+                            "Test API endpoints",
+                            "Test the CRUD operations",
+                            False
+                        ),
+                        (
+                            "Complete documentation",
+                            "Prepare the Week 2 submission",
+                            False
+                        )
+                    ]
+                )
 
 
 initialize_database()
@@ -125,45 +128,42 @@ def health_check():
 
 @app.get("/tasks", summary="Get all tasks")
 def get_tasks():
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM tasks ORDER BY id"
+            )
 
-    rows = connection.execute(
-        "SELECT * FROM tasks"
-    ).fetchall()
+            rows = cursor.fetchall()
 
-    connection.close()
+            columns = [column.name for column in cursor.description]
 
-    tasks = []
-
-    for row in rows:
-        task = dict(row)
-        task["completed"] = bool(task["completed"])
-        tasks.append(task)
-
-    return tasks
+    return [
+        dict(zip(columns, row))
+        for row in rows
+    ]
 
 
 @app.get("/tasks/{task_id}", summary="Get a task by ID")
 def get_task(task_id: int):
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM tasks WHERE id = %s",
+                (task_id,)
+            )
 
-    row = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,)
-    ).fetchone()
+            row = cursor.fetchone()
 
-    connection.close()
+            if row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found"
+                )
 
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Task not found"
-        )
+            columns = [column.name for column in cursor.description]
 
-    task = dict(row)
-    task["completed"] = bool(task["completed"])
-
-    return task
+    return dict(zip(columns, row))
 
 
 @app.post(
@@ -172,35 +172,28 @@ def get_task(task_id: int):
     summary="Create a task"
 )
 def create_task(task: TaskCreate):
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
 
-    cursor = connection.execute(
-        """
-        INSERT INTO tasks (title, description, completed)
-        VALUES (?, ?, ?)
-        """,
-        (
-            task.title,
-            task.description,
-            int(task.completed)
-        )
-    )
+            cursor.execute(
+                """
+                INSERT INTO tasks
+                    (title, description, completed)
+                VALUES
+                    (%s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    task.title,
+                    task.description,
+                    task.completed
+                )
+            )
 
-    task_id = cursor.lastrowid
+            row = cursor.fetchone()
+            columns = [column.name for column in cursor.description]
 
-    connection.commit()
-
-    row = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,)
-    ).fetchone()
-
-    connection.close()
-
-    new_task = dict(row)
-    new_task["completed"] = bool(new_task["completed"])
-
-    return new_task
+    return dict(zip(columns, row))
 
 
 @app.put(
@@ -208,68 +201,65 @@ def create_task(task: TaskCreate):
     summary="Update a task"
 )
 def update_task(task_id: int, task_update: TaskUpdate):
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
 
-    existing_task = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,)
-    ).fetchone()
+            cursor.execute(
+                "SELECT * FROM tasks WHERE id = %s",
+                (task_id,)
+            )
 
-    if existing_task is None:
-        connection.close()
+            existing_task = cursor.fetchone()
 
-        raise HTTPException(
-            status_code=404,
-            detail="Task not found"
-        )
+            if existing_task is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found"
+                )
 
-    current_task = dict(existing_task)
+            columns = [column.name for column in cursor.description]
+            current_task = dict(zip(columns, existing_task))
 
-    title = (
-        task_update.title
-        if task_update.title is not None
-        else current_task["title"]
-    )
+            title = (
+                task_update.title
+                if task_update.title is not None
+                else current_task["title"]
+            )
 
-    description = (
-        task_update.description
-        if task_update.description is not None
-        else current_task["description"]
-    )
+            description = (
+                task_update.description
+                if task_update.description is not None
+                else current_task["description"]
+            )
 
-    completed = (
-        task_update.completed
-        if task_update.completed is not None
-        else current_task["completed"]
-    )
+            completed = (
+                task_update.completed
+                if task_update.completed is not None
+                else current_task["completed"]
+            )
 
-    connection.execute(
-        """
-        UPDATE tasks
-        SET title = ?, description = ?, completed = ?
-        WHERE id = ?
-        """,
-        (
-            title,
-            description,
-            int(completed),
-            task_id
-        )
-    )
+            cursor.execute(
+                """
+                UPDATE tasks
+                SET
+                    title = %s,
+                    description = %s,
+                    completed = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    title,
+                    description,
+                    completed,
+                    task_id
+                )
+            )
 
-    connection.commit()
+            row = cursor.fetchone()
+            columns = [column.name for column in cursor.description]
 
-    updated_task = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,)
-    ).fetchone()
-
-    connection.close()
-
-    result = dict(updated_task)
-    result["completed"] = bool(result["completed"])
-
-    return result
+    return dict(zip(columns, row))
 
 
 @app.delete(
@@ -278,27 +268,25 @@ def update_task(task_id: int, task_update: TaskUpdate):
     summary="Delete a task"
 )
 def delete_task(task_id: int):
-    connection = get_db_connection()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
 
-    existing_task = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,)
-    ).fetchone()
+            cursor.execute(
+                "SELECT id FROM tasks WHERE id = %s",
+                (task_id,)
+            )
 
-    if existing_task is None:
-        connection.close()
+            existing_task = cursor.fetchone()
 
-        raise HTTPException(
-            status_code=404,
-            detail="Task not found"
-        )
+            if existing_task is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found"
+                )
 
-    connection.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        (task_id,)
-    )
-
-    connection.commit()
-    connection.close()
+            cursor.execute(
+                "DELETE FROM tasks WHERE id = %s",
+                (task_id,)
+            )
 
     return

@@ -133,7 +133,14 @@ def get_tasks():
 
     connection.close()
 
-    return [dict(row) for row in rows]
+    tasks = []
+
+    for row in rows:
+        task = dict(row)
+        task["completed"] = bool(task["completed"])
+        tasks.append(task)
+
+    return tasks
 
 
 @app.get("/tasks/{task_id}", summary="Get a task by ID")
@@ -153,7 +160,10 @@ def get_task(task_id: int):
             detail="Task not found"
         )
 
-    return dict(row)
+    task = dict(row)
+    task["completed"] = bool(task["completed"])
+
+    return task
 
 
 @app.post(
@@ -187,7 +197,10 @@ def create_task(task: TaskCreate):
 
     connection.close()
 
-    return dict(row)
+    new_task = dict(row)
+    new_task["completed"] = bool(new_task["completed"])
+
+    return new_task
 
 
 @app.put(
@@ -253,7 +266,10 @@ def update_task(task_id: int, task_update: TaskUpdate):
 
     connection.close()
 
-    return dict(updated_task)
+    result = dict(updated_task)
+    result["completed"] = bool(result["completed"])
+
+    return result
 
 
 @app.delete(
